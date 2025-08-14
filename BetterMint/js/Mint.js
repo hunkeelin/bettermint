@@ -152,6 +152,78 @@ class TopMove {
     this.cp = cp;
     this.mate = mate;
     this.depth = depth;
+    this.classification = null; // Will be set by classifyMove
+  }
+  
+  // Classify move based on Chess.com's Expected Points Model
+  classifyMove(bestMove, playerRating = 1500) {
+    if (!bestMove || this.mate !== null) {
+      // Handle mate situations or if this is the best move
+      if (this === bestMove || this.mate !== null) {
+        this.classification = { type: 'best', symbol: '', color: '#96af8b', points: 0 };
+        return this.classification;
+      }
+    }
+    
+    let expectedPointsLoss = 0;
+    
+    // Calculate expected points loss based on centipawn difference
+    if (this.cp !== null && bestMove.cp !== null) {
+      const cpDiff = Math.abs(this.cp - bestMove.cp);
+      
+      // Convert centipawn difference to expected points loss
+      // Using a sigmoid function similar to Chess.com's model
+      expectedPointsLoss = Math.min(1.0, cpDiff / 100.0 * 0.1);
+      
+      // Adjust based on position complexity and player rating
+      const ratingFactor = Math.max(0.5, Math.min(2.0, playerRating / 1500));
+      expectedPointsLoss *= ratingFactor;
+    }
+    
+    // Classify based on expected points thresholds
+    if (expectedPointsLoss <= 0.00) {
+      this.classification = { type: 'best', symbol: '', color: '#4CAF50', points: expectedPointsLoss }; // Bright green
+    } else if (expectedPointsLoss <= 0.02) {
+      this.classification = { type: 'excellent', symbol: '', color: '#2196F3', points: expectedPointsLoss }; // Blue
+    } else if (expectedPointsLoss <= 0.05) {
+      this.classification = { type: 'good', symbol: '', color: '#00BCD4', points: expectedPointsLoss }; // Cyan
+    } else if (expectedPointsLoss <= 0.10) {
+      this.classification = { type: 'inaccuracy', symbol: '?!', color: '#dbac00', points: expectedPointsLoss };
+    } else if (expectedPointsLoss <= 0.20) {
+      this.classification = { type: 'mistake', symbol: '?', color: '#ff9500', points: expectedPointsLoss };
+    } else {
+      this.classification = { type: 'blunder', symbol: '??', color: '#ff6444', points: expectedPointsLoss };
+    }
+    
+    return this.classification;
+  }
+  
+  // Check for brilliant moves (good piece sacrifices)
+  checkForBrilliantMove(position, bestMove) {
+    // This is a simplified brilliant move detection
+    // In a full implementation, you'd analyze piece values and tactics
+    if (this === bestMove && this.cp !== null && bestMove.cp !== null) {
+      const moveNotation = this.move;
+      // Simple heuristic: if it's a piece sacrifice that maintains/improves position
+      if (this.cp >= bestMove.cp - 50 && (moveNotation.includes('x') || moveNotation.length > 4)) {
+        this.classification = { type: 'brilliant', symbol: '!!', color: '#1baca6', points: 0 };
+        return true;
+      }
+    }
+    return false;
+  }
+  
+  // Check for great moves (critical moves)
+  checkForGreatMove(position, bestMove, previousEval) {
+    if (this === bestMove && this.cp !== null && previousEval !== null) {
+      const improvement = Math.abs(this.cp - previousEval);
+      // Great move if it significantly improves the position
+      if (improvement > 100) {
+        this.classification = { type: 'great', symbol: '!', color: '#5e9e2d', points: 0 };
+        return true;
+      }
+    }
+    return false;
   }
 }
 
@@ -343,21 +415,35 @@ class GameController {
   }
   HintMoves(topMoves, lastTopMoves, isBestMove) {
     let bestMove = topMoves[0];
+    
+    // Classify all moves before displaying hints
+    if (topMoves.length > 0) {
+      topMoves.forEach((move, idx) => {
+        // Classify each move
+        move.classifyMove(bestMove);
+        
+        // Check for special classifications
+        if (idx === 0) {
+          move.checkForBrilliantMove(null, bestMove);
+          move.checkForGreatMove(null, bestMove, this.lastMoveScore);
+        }
+      });
+    }
+    
     if (getValueConfig(enumOptions.ShowHints)) {
       this.RemoveCurrentMarkings();
+      
+      // Display move classification hints panel
+      this.displayMoveClassificationHints(topMoves, isBestMove);
+      
       topMoves.forEach((move, idx) => {
         // isBestMove means final evaluation, don't include the moves that has less
         // depth than the best move
         if (isBestMove && move.depth != bestMove.depth) return;
 
-        // Add fast check evalution
+        // Use classification color for highlighting instead of gradient
+        let hlColor = move.classification ? move.classification.color : "#0000ff";
         if (idx != 0 && move.cp != null && move.mate == null) {
-          let hlColor = getGradientColor(
-            "#ff0000",
-            "#0000ff",
-            Math.min(((move.cp + 250) / 500) ** 4),
-            1
-          );
           this.currentMarkings.push({
             data: {
               opacity: 0.4,
@@ -370,15 +456,16 @@ class GameController {
           });
         }
 
-        // Draw arror
-        let color =
-          idx == 0
+        // Draw arrow with classification color
+        let color = move.classification ? move.classification.color : 
+          (idx == 0
             ? this.options.arrowColors.alt
             : idx >= 1 && idx <= 2
             ? this.options.arrowColors.shift
             : idx >= 3 && idx <= 5
             ? this.options.arrowColors.default
-            : this.options.arrowColors.ctrl;
+            : this.options.arrowColors.ctrl);
+            
         this.currentMarkings.push({
           data: {
             from: move.from,
@@ -390,6 +477,7 @@ class GameController {
           persistent: true,
           type: "arrow",
         });
+        
         if (move.mate != null) {
           this.currentMarkings.push({
             data: {
@@ -418,6 +506,172 @@ class GameController {
       if (this.controller.getTurn() == 2) score *= -1;
       this.SetEvaluation(score, bestMove.mate != null);
     }
+  }
+  
+  // Display move classification hints panel
+  displayMoveClassificationHints(topMoves, isFinalEvaluation) {
+    if (!topMoves || topMoves.length === 0) return;
+    
+    // Remove existing hints panel
+    const existingPanel = document.getElementById('bettermint-hints-panel');
+    if (existingPanel) {
+      existingPanel.remove();
+    }
+    
+    // Create hints panel
+    const hintsPanel = document.createElement('div');
+    hintsPanel.id = 'bettermint-hints-panel';
+    hintsPanel.style.cssText = `
+      position: fixed;
+      top: 120px;
+      right: 20px;
+      width: 280px;
+      max-height: 400px;
+      background: rgba(48, 46, 42, 0.95);
+      border: 2px solid #8ca2ad;
+      border-radius: 8px;
+      padding: 12px;
+      z-index: 10000;
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+      font-size: 13px;
+      color: white;
+      box-shadow: 0 4px 12px rgba(0,0,0,0.3);
+      overflow-y: auto;
+    `;
+    
+    // Add title
+    const title = document.createElement('div');
+    title.style.cssText = `
+      font-weight: bold;
+      margin-bottom: 10px;
+      padding-bottom: 8px;
+      border-bottom: 1px solid #8ca2ad;
+      color: #8ca2ad;
+    `;
+    title.textContent = isFinalEvaluation ? 'Move Analysis' : 'Candidate Moves';
+    hintsPanel.appendChild(title);
+    
+    // Add each move with classification
+    topMoves.slice(0, 5).forEach((move, idx) => {
+      const moveElement = document.createElement('div');
+      moveElement.style.cssText = `
+        margin: 6px 0;
+        padding: 8px;
+        background: rgba(0,0,0,0.2);
+        border-radius: 4px;
+        border-left: 4px solid ${move.classification ? move.classification.color : '#8ca2ad'};
+        cursor: pointer;
+        transition: all 0.2s ease;
+      `;
+      
+      // Format evaluation score
+      let evalText = '';
+      if (move.mate !== null) {
+        evalText = move.mate > 0 ? `#${move.mate}` : `#${Math.abs(move.mate)}`;
+      } else if (move.cp !== null) {
+        evalText = (move.cp >= 0 ? '+' : '') + (move.cp / 100).toFixed(2);
+      }
+      
+      const classification = move.classification || { type: 'unknown', symbol: '', color: '#8ca2ad' };
+      
+      moveElement.innerHTML = `
+        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 4px;">
+          <div style="display: flex; align-items: center;">
+            <span style="font-weight: bold; color: ${classification.color}; margin-right: 6px;">
+              ${idx + 1}. ${move.move}${classification.symbol}
+            </span>
+            <span style="
+              background: ${classification.color};
+              color: white;
+              padding: 2px 6px;
+              border-radius: 3px;
+              font-size: 10px;
+              font-weight: bold;
+              text-transform: uppercase;
+            ">
+              ${classification.type}
+            </span>
+          </div>
+          <span style="color: #ccc; font-size: 12px;">${evalText}</span>
+        </div>
+        <div style="font-size: 11px; color: #999;">
+          ${move.line.slice(0, 6).join(' ')}${move.line.length > 6 ? '...' : ''}
+        </div>
+      `;
+      
+      // Add hover effects
+      moveElement.addEventListener('mouseenter', () => {
+        moveElement.style.backgroundColor = 'rgba(255,255,255,0.1)';
+      });
+      
+      moveElement.addEventListener('mouseleave', () => {
+        moveElement.style.backgroundColor = 'rgba(0,0,0,0.2)';
+      });
+      
+      // Add click handler to highlight the move
+      moveElement.addEventListener('click', () => {
+        // Highlight this specific move
+        this.highlightSpecificMove(move);
+      });
+      
+      hintsPanel.appendChild(moveElement);
+    });
+    
+    // Add close button
+    const closeButton = document.createElement('button');
+    closeButton.textContent = '×';
+    closeButton.style.cssText = `
+      position: absolute;
+      top: 8px;
+      right: 8px;
+      background: none;
+      border: none;
+      color: #8ca2ad;
+      font-size: 20px;
+      cursor: pointer;
+      padding: 0;
+      width: 24px;
+      height: 24px;
+      line-height: 20px;
+      text-align: center;
+    `;
+    closeButton.addEventListener('click', () => hintsPanel.remove());
+    hintsPanel.appendChild(closeButton);
+    
+    // Add to page
+    document.body.appendChild(hintsPanel);
+    
+    // Auto-remove after 10 seconds if not in final evaluation
+    if (!isFinalEvaluation) {
+      setTimeout(() => {
+        if (hintsPanel.parentNode) {
+          hintsPanel.remove();
+        }
+      }, 10000);
+    }
+  }
+  
+  // Highlight a specific move
+  highlightSpecificMove(move) {
+    // Remove previous single move highlights
+    const existingHighlights = document.querySelectorAll('.bettermint-single-move-highlight');
+    existingHighlights.forEach(el => el.remove());
+    
+    // Create temporary highlight for this move
+    this.controller.markings.addMany([
+      {
+        data: {
+          from: move.from,
+          color: move.classification ? move.classification.color : '#8ca2ad',
+          opacity: 1.0,
+          to: move.to,
+        },
+        node: true,
+        persistent: false,
+        type: "arrow",
+        className: 'bettermint-single-move-highlight'
+      }
+    ]);
   }
   SetCurrentDepth(percentage) {
     if (this.depthBar == null) return;
@@ -1508,6 +1762,7 @@ if (oldPeerConnection) {
     return pc;
   };
 }
+
 window.addEventListener(
   "bm",
   function (event) {

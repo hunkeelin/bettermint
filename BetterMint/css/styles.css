@@ -1,3 +1,118 @@
 .title {
   color: green;
 }
+
+/* Move Classification Styles */
+.bettermint-hints-panel {
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+}
+
+.move-brilliant {
+  color: #1baca6 !important;
+  font-weight: bold;
+}
+
+.move-great {
+  color: #5e9e2d !important;
+  font-weight: bold;
+}
+
+.move-best {
+  color: #4CAF50 !important;
+  font-weight: bold;
+}
+
+.move-excellent {
+  color: #2196F3 !important;
+  font-weight: bold;
+}
+
+.move-good {
+  color: #00BCD4 !important;
+}
+
+.move-inaccuracy {
+  color: #dbac00 !important;
+}
+
+.move-mistake {
+  color: #ff9500 !important;
+}
+
+.move-blunder {
+  color: #ff6444 !important;
+}
+
+.classification-badge {
+  display: inline-block;
+  padding: 2px 6px;
+  border-radius: 3px;
+  font-size: 10px;
+  font-weight: bold;
+  text-transform: uppercase;
+  color: white;
+  margin-left: 6px;
+}
+
+.classification-brilliant {
+  background: #1baca6;
+}
+
+.classification-great {
+  background: #5e9e2d;
+}
+
+.classification-best {
+  background: #4CAF50;
+}
+
+.classification-excellent {
+  background: #2196F3;
+}
+
+.classification-good {
+  background: #00BCD4;
+}
+
+.classification-inaccuracy {
+  background: #dbac00;
+}
+
+.classification-mistake {
+  background: #ff9500;
+}
+
+.classification-blunder {
+  background: #ff6444;
+}
+
+.classification-inaccuracy {
+  background: #dbac00;
+}
+
+.classification-mistake {
+  background: #ff9500;
+}
+
+.classification-blunder {
+  background: #ff6444;
+}
+
+/* Scrollbar styling for hints panel */
+#bettermint-hints-panel::-webkit-scrollbar {
+  width: 6px;
+}
+
+#bettermint-hints-panel::-webkit-scrollbar-track {
+  background: rgba(0,0,0,0.1);
+  border-radius: 3px;
+}
+
+#bettermint-hints-panel::-webkit-scrollbar-thumb {
+  background: #8ca2ad;
+  border-radius: 3px;
+}
+
+#bettermint-hints-panel::-webkit-scrollbar-thumb:hover {
+  background: #a0b5c0;
+}
